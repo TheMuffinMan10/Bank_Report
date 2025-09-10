@@ -5,6 +5,18 @@ from PyQt5.QtWidgets import (
     QGridLayout, QDesktopWidget, QFileDialog, QMainWindow
 )
 import PyPDF2, spacy
+from spacy.matcher import Matcher
+
+class Transaction:
+    def __init__(self, date, description, amount, balance=None):
+        self.date = date
+        self.description = description
+        self.amount = amount
+        self.balance = balance
+
+    def __repr__(self):
+        return f"Transaction(date={self.date}, desc={self.description}, amount={self.amount}, balance={self.balance})"
+
 
 class UI(QMainWindow):
     def __init__(self):
@@ -37,6 +49,7 @@ class UI(QMainWindow):
         self.btnUpload.clicked.connect(self.getFilePath)
 
         self.btnReport = QPushButton("Get Report")
+        self.btnReport.setEnabled(False)
         self.btnReport.clicked.connect(self.getReport)
 
         # --- Layout ---
@@ -68,25 +81,47 @@ class UI(QMainWindow):
             "PDF Files (*.pdf)"
         )
         if filePath:
+            self.btnReport.setEnabled(True)
             return filePath
         else:
             return ""
 
+    #method to get file path
     def getFilePath(self):
         self.path = self.openFileDialog()
 
+    #method to generate the report
     def getReport(self):
-        with open(self.path, "rb") as file:
+        with open(self.path, "rb") as file: #allows us to loop through the provided pdf
             reader = PyPDF2.PdfReader(file)
             contents = ""
+            
+            #print("get all text from pdf")
+            #get all text from pdf
             for page in reader.pages:
                 contents += page.extract_text()
-            nlp = spacy.load("en_core_web_md")
-            doc = nlp(contents)
-            for ent in doc.ents:
-                print(ent.text, "->", ent.label_)
+            #print(contents + "' '")
 
-# --- Run the app ---
+            #pattern for matcher
+            open_bal_pattern = [
+                {"LOWER": "opening", "OP": "?"},
+                {"LOWER": "balance"},
+                {"TEXT": "R", "OP": "?"},
+                {"LIKE_NUM": True}
+            ]
+
+            #read text for analysis
+            nlp = spacy.load("en_core_web_lg")
+            matcher = Matcher(nlp.vocab)
+            matcher.add("opening balance", [open_bal_pattern])
+            doc = nlp(contents)
+
+            matches = matcher(doc)
+            for match_id, start, end in matches:
+                span = doc[start:end]
+                self.lblIncome.setText(f"{span.text} ({nlp.vocab.strings[match_id]})")
+                print("machtes:", span.text, nlp.vocab.strings[match_id])
+
 app = QApplication(sys.argv)
 window = UI()
 window.show()
